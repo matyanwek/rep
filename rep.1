@@ -1,0 +1,34 @@
+.TH REP 1
+.
+.SH NAME
+rep \- repeat files
+.
+.SH SYNOPSIS
+.B rep
+[OPTION]... [FILE]...
+.
+.SH DESCRIPTION
+.PP
+Output the concatenation of input FILEs n times (10 by default).
+.PP
+With no FILE, or when FILE is \-, read standard input.
+.TP
+.B \-n
+Number of times to repeat input files (10 by default)
+.TP
+.B \-h
+display Help and exit
+.
+.SH EXAMPLES
+.TP
+echo hello world | rep
+Repeat "hello world" 10 times.
+.TP
+rep -n 20 file_1
+repeat the contents of file_1 20 times.
+.
+.SH AUTHOR
+Written by Gal Zeira <gal_zeira@protonmail.com>.
+.
+.SH "REPORTING BUGS"
+Mail directly to the author.
