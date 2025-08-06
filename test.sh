@@ -74,4 +74,9 @@ for t in $tests; do
 		: $((fails += 1))
 	fi
 done
-echo "$fails/$n tests failed"
+
+if [ "$fails" -eq 0 ]; then
+	echo 'all tests passed'
+else
+	echo "$fails/$n tests failed"
+fi
