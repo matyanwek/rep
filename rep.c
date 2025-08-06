@@ -46,7 +46,8 @@ bool read_stdin(String *s) {
 
 bool dump_string(const String *s) {
 	size_t n = fwrite(s->data, sizeof(char), s->len, stdout);
-	return n == s->len || !(bool)ferror(stdout);
+	bool ok = n == s->len || !(bool)ferror(stdout);
+	return ok;
 }
 
 bool dump_file(const char *filename) {
@@ -67,7 +68,7 @@ bool dump_file(const char *filename) {
 			fclose(file);
 			return false;
 		} else {
-			bool ok = !ferror(file) && !(bool)fclose(file);
+			bool ok = !(bool)ferror(file) && !(bool)fclose(file);
 			return ok;
 		}
 	}
