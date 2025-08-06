@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <error.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,105 +10,67 @@ typedef struct {
 	size_t cap;
 	size_t len;
 	char *data;
-} StringBuilder;
+} String;
 
-StringBuilder *sb_init() {
-	StringBuilder *sb = malloc(sizeof(StringBuilder));
-	if (sb == NULL) {
-		char *msg = strerror(errno);
-		fprintf(stderr, "%s\n", msg);
-		exit(EXIT_FAILURE);
+void *string_grow(String *s, size_t delta) {
+	size_t new_cap = s->cap > 0 ? s->cap : delta;
+	while (new_cap < s->len + delta) {
+		new_cap *= 2;
 	}
 
-	sb->cap = 0;
-	sb->len = 0;
-	return sb;
-}
-
-void sb_del(StringBuilder *sb) {
-	free(sb->data);
-	free(sb);
-}
-
-void *sb_extend(StringBuilder *sb, const char *s, size_t len) {
-	if (sb->cap < sb->len + len) {
-		sb->cap = sb->len + len;
-		sb->data = realloc(sb->data, sb->cap * sizeof(char));
-		if (sb->data == NULL) {
-			char *msg = strerror(errno);
-			fprintf(stderr, "%s\n", msg);
-			exit(EXIT_FAILURE);
+	if (s->cap < new_cap) {
+		s->data = realloc(s->data, sizeof(char) * new_cap);
+		if (s->data == NULL) {
+			error(EXIT_FAILURE, errno, "error growing String");
 		}
+		s->cap = new_cap;
 	}
 
-	memcpy(sb->data + sb->len, s, len);
-	sb->len += len;
-
-	return sb;
+	return s;
 }
 
-bool load_stdin(StringBuilder *sb) {
-	char buf[BUFSIZ];
-
+bool read_stdin(String *s) {
 	for (;;) {
-		size_t read_len = fread(buf, sizeof(char), BUFSIZ, stdin);
-		sb_extend(sb, buf, read_len);
-
-		if (read_len != BUFSIZ * sizeof(char)) {
-			if (ferror(stdin)) {
-				fprintf(stderr, "error reading STDIN\n");
-				return false;
-			}
-			break;
+		string_grow(s, BUFSIZ);
+		size_t n = fread(s->data + s->len, sizeof(char), BUFSIZ, stdin);
+		s->len += n;
+		if (n == BUFSIZ) {
+			continue;
+		} else if (ferror(stdin)) {
+			return false;
+		} else {
+			return true;
 		}
 	}
-
-	return true;
 }
 
-void dump_stdin(const StringBuilder *sb) {
-	size_t write_len = fwrite(sb->data, sizeof(char), sb->len, stdout);
-	if (write_len < sb->len) {
-		fprintf(stderr, "error writing to STDOUT\n");
-		exit(EXIT_FAILURE);
-	}
+bool dump_string(const String *s) {
+	size_t n = fwrite(s->data, sizeof(char), s->len, stdout);
+	return n == s->len || !(bool)ferror(stdout);
 }
 
 bool dump_file(const char *filename) {
-	FILE *file = fopen(filename, "r");
+	FILE *file;
+	file = fopen(filename, "r");
 	if (file == NULL) {
-		char *msg = strerror(errno);
-		fprintf(stderr, "error opening file '%s': %s\n", filename, msg);
 		return false;
 	}
 
 	char buf[BUFSIZ];
 	for (;;) {
-		size_t read_len = fread(buf, sizeof(char), BUFSIZ, file);
-		size_t write_len = fwrite(buf, sizeof(char), read_len, stdout);
+		size_t n_read = fread(buf, sizeof(char), BUFSIZ, file);
+		size_t n_wrote = fwrite(buf, sizeof(char), n_read, stdout);
 
-		if (write_len < read_len) {
-			fprintf(stderr, "error writing to STDOUT\n");
-			exit(EXIT_FAILURE);
-		}
-
-		if (read_len < BUFSIZ) {
-			if (ferror(file)) {
-				fprintf(stderr, "error reading file '%s'\n", filename);
-				return false;
-			}
-
-			break;
+		if (n_wrote == BUFSIZ) {
+			continue;
+		} else if (n_wrote < n_read && ferror(stdout)) {
+			fclose(file);
+			return false;
+		} else {
+			bool ok = !ferror(file) && !(bool)fclose(file);
+			return ok;
 		}
 	}
-
-	if (fclose(file) != 0) {
-		char *msg = strerror(errno);
-		fprintf(stderr, "error closing file '%s': %s\n", filename, msg);
-		return false;
-	}
-
-	return true;
 }
 
 int main(int argc, char **argv) {
@@ -139,54 +102,42 @@ int main(int argc, char **argv) {
 			break;
 		}
 	}
-	int arglen = argc - optind;
 
-	StringBuilder *sb = sb_init();
-
-	if (arglen < 1) {
-		// no file arguments; rep stdin and exit early;
-		load_stdin(sb);
-		for (int i = 0; i < nflag; i++) {
-			dump_stdin(sb);
-		}
-		return EXIT_SUCCESS;
+	size_t nargs = argc - optind;
+	char **args;
+	if (nargs < 1) {
+		nargs = 1;
+		args = (char *[]){"-"};
+	} else {
+		args = argv + optind;
 	}
 
-	bool file_ok[arglen];
-	for (int i = 0; i < arglen; i++) {
-		file_ok[i] = true;
-	}
+	String stdin_buf;
+	bool got_stdin = false;
 
-	int ret = EXIT_SUCCESS; // return failure if we get an error reading a file
-	bool stdin_loaded = false;
 	for (int i = 0; i < nflag; i++) {
-		for (int j = 0; j < arglen; j++) {
-			char *filename = argv[optind + j];
+		for (size_t i = 0; i < nargs; i++) {
+			char *filename = args[i];
 
-			if (!file_ok[j]) {
-				// previous error reading file; skip
-				continue;
-			} else if (strcmp(filename, "-") != 0) {
-				// file; dump
+			if (strcmp(filename, "-") != 0) {
 				if (!dump_file(filename)) {
-					file_ok[j] = false;
-					ret = EXIT_FAILURE;
+					error(EXIT_FAILURE, errno, "error reading from \"%s\"", filename);
 				}
-			} else {
-				// stdin; load if needed, then dump
-				if (!stdin_loaded) {
-					if (load_stdin(sb)) {
-						stdin_loaded = true;
-					} else {
-						file_ok[j] = false;
-						ret = EXIT_FAILURE;
-						continue;
-					}
+				continue;
+			}
+
+			if (!got_stdin) {
+				if (!read_stdin(&stdin_buf)) {
+					error(EXIT_FAILURE, errno, "error reading from stdin");
 				}
-				dump_stdin(sb);
+				got_stdin = true;
+			}
+
+			if (!dump_string(&stdin_buf)) {
+				error(EXIT_FAILURE, errno, "error writing to stdout");
 			}
 		}
 	}
 
-	return ret;
+	return 0;
 }
