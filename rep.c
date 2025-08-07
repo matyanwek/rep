@@ -113,7 +113,7 @@ int main(int argc, char **argv) {
 		args = argv + optind;
 	}
 
-	String stdin_buf;
+	String stdin_buf = {0};
 	bool got_stdin = false;
 
 	for (int i = 0; i < nflag; i++) {
