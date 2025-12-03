@@ -1,18 +1,14 @@
-.PHONY: all
+rep: main.c
+	cc -o rep main.c
 
-all:
-	cc -o rep rep.c
-
-.PHONY: install
-
-install:
+install: rep
 	mkdir -p /usr/local/bin
-	mkdir -p /usr/local/share/man/man1
-	cc -o rep rep.c
 	cp rep /usr/local/bin
+	mkdir -p /usr/local/share/man/man1
 	cp rep.1 /usr/local/share/man/man1
 
-.PHONY: test
+test: rep
+	./test.sh
 
-test:
-	cc -o rep rep.c && ./test.sh
+clean: rep
+	rm rep
